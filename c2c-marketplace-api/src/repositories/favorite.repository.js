@@ -7,6 +7,12 @@ class FavoriteRepository {
     return this.prisma.favorite.findMany();
   }
 
+  findByUserId(user_id) {
+    return this.prisma.favorite.findMany({
+      where: { user_id },
+    });
+  }
+
   findById(user_id, ad_id) {
     return this.prisma.favorite.findUnique({
       where: { user_id_ad_id: { user_id, ad_id } },

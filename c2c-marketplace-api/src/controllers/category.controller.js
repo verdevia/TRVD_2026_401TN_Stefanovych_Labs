@@ -3,12 +3,19 @@ const router = express.Router();
 
 const { categoryService } = require("../container");
 const CategoryDTO = require("../dto/category.dto");
+const authenticate = require("../middleware/auth.middleware");
+const authorizeRoles = require("../middleware/role.middleware");
+
+function respondError(res, e) {
+  const status = e.status || (e.message === "Forbidden" ? 403 : (e.message === "Unauthorized" ? 401 : (/(not found)/i.test(e.message) ? 404 : 400)));
+  return res.status(status).json({ error: e.message });
+}
 
 /**
  * @swagger
  * tags:
  *   name: Categories
- *   description: Категорії товарів
+ *   description: Product categories
  */
 
 /**
@@ -30,11 +37,11 @@ const CategoryDTO = require("../dto/category.dto");
  * @swagger
  * /api/categories:
  *   get:
- *     summary: Отримати всі категорії
+ *     summary: Get all categories
  *     tags: [Categories]
  *     responses:
  *       200:
- *         description: Список категорій
+ *         description: List of categories
  *         content:
  *           application/json:
  *             schema:
@@ -51,7 +58,7 @@ router.get("/", async (req, res) => {
  * @swagger
  * /api/categories/{id}:
  *   get:
- *     summary: Отримати категорію за ID
+ *     summary: Get category by ID
  *     tags: [Categories]
  *     parameters:
  *       - in: path
@@ -61,20 +68,68 @@ router.get("/", async (req, res) => {
  *           type: integer
  *     responses:
  *       200:
- *         description: Категорія знайдена
+ *         description: Category found
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/CategoryDTO'
  *       404:
- *         description: Категорію не знайдено
+ *         description: Category not found
  */
 router.get("/:id", async (req, res) => {
   try {
     const category = await categoryService.getCategory(Number(req.params.id));
     res.json(new CategoryDTO(category));
-  } catch {
-    res.status(404).json({ error: "Category not found" });
+  } catch (e) {
+    respondError(res, e);
+  }
+});
+
+/**
+ * @swagger
+ * /api/categories/{id}:
+ *   patch:
+ *     summary: Partial update category
+ *     tags: [Categories]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Category updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/CategoryDTO'
+ *       400:
+ *         description: Invalid data
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Category not found
+ */
+router.patch("/:id", authenticate, authorizeRoles("moderator", "admin"), async (req, res) => {
+  try {
+    const category = await categoryService.updateCategory(Number(req.params.id), req.body);
+    res.json(new CategoryDTO(category));
+  } catch (e) {
+    respondError(res, e);
   }
 });
 
@@ -82,8 +137,10 @@ router.get("/:id", async (req, res) => {
  * @swagger
  * /api/categories:
  *   post:
- *     summary: Створити нову категорію
+ *     summary: Create new category
  *     tags: [Categories]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -95,15 +152,19 @@ router.get("/:id", async (req, res) => {
  *                 type: string
  *     responses:
  *       201:
- *         description: Категорія створена
+ *         description: Category created
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/CategoryDTO'
  *       400:
- *         description: Некоректні дані
+ *         description: Invalid request data
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
  */
-router.post("/", async (req, res) => {
+router.post("/", authenticate, authorizeRoles("moderator", "admin"), async (req, res) => {
   try {
     const category = await categoryService.createCategory(req.body);
     res.status(201).json(new CategoryDTO(category));
@@ -116,8 +177,10 @@ router.post("/", async (req, res) => {
  * @swagger
  * /api/categories/{id}:
  *   delete:
- *     summary: Видалити категорію за ID
+ *     summary: Delete category by ID
  *     tags: [Categories]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -126,7 +189,7 @@ router.post("/", async (req, res) => {
  *           type: integer
  *     responses:
  *       200:
- *         description: Категорія видалена
+ *         description: Category deleted
  *         content:
  *           application/json:
  *             schema:
@@ -135,15 +198,19 @@ router.post("/", async (req, res) => {
  *                 message:
  *                   type: string
  *                   example: Deleted
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
  *       404:
- *         description: Категорію не знайдено
+ *         description: Category not found
  */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authenticate, authorizeRoles("moderator", "admin"), async (req, res) => {
   try {
     await categoryService.deleteCategory(Number(req.params.id));
     res.json({ message: "Deleted" });
-  } catch {
-    res.status(404).json({ error: "Category not found" });
+  } catch (e) {
+    respondError(res, e);
   }
 });
 

@@ -2,12 +2,19 @@ const express = require("express");
 const router = express.Router();
 const { reviewService } = require("../container");
 const ReviewDTO = require("../dto/review.dto");
+const authenticate = require("../middleware/auth.middleware");
+const authorizeRoles = require("../middleware/role.middleware");
+
+function respondError(res, e) {
+  const status = e.status || (e.message === "Forbidden" ? 403 : (e.message === "Unauthorized" ? 401 : (/(not found)/i.test(e.message) ? 404 : 400)));
+  return res.status(status).json({ error: e.message });
+}
 
 /**
  * @swagger
  * tags:
  *   name: Reviews
- *   description: Відгуки користувачів
+ *   description: User reviews
  */
 
 /**
@@ -31,7 +38,7 @@ const ReviewDTO = require("../dto/review.dto");
  *           example: 5
  *         comment:
  *           type: string
- *           example: "Відмінний продавець!"
+ *           example: "Excellent seller!"
  *         created_at:
  *           type: string
  *           format: date-time
@@ -42,11 +49,11 @@ const ReviewDTO = require("../dto/review.dto");
  * @swagger
  * /api/reviews:
  *   get:
- *     summary: Отримати всі відгуки
+ *     summary: Get all reviews
  *     tags: [Reviews]
  *     responses:
  *       200:
- *         description: Список відгуків
+ *         description: List of reviews
  *         content:
  *           application/json:
  *             schema:
@@ -63,7 +70,7 @@ router.get("/", async (req, res) => {
  * @swagger
  * /api/reviews/{id}:
  *   get:
- *     summary: Отримати відгук за ID
+ *     summary: Get review by ID
  *     tags: [Reviews]
  *     parameters:
  *       - in: path
@@ -73,20 +80,20 @@ router.get("/", async (req, res) => {
  *           type: integer
  *     responses:
  *       200:
- *         description: Відгук знайдено
+ *         description: Review found
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ReviewDTO'
  *       404:
- *         description: Відгук не знайдено
+ *         description: Review not found
  */
 router.get("/:id", async (req, res) => {
   try {
     const review = await reviewService.getReview(Number(req.params.id));
     res.json(new ReviewDTO(review));
-  } catch {
-    res.status(404).json({ error: "Review not found" });
+  } catch (e) {
+    respondError(res, e);
   }
 });
 
@@ -94,8 +101,10 @@ router.get("/:id", async (req, res) => {
  * @swagger
  * /api/reviews:
  *   post:
- *     summary: Створити новий відгук
+ *     summary: Create a new review
  *     tags: [Reviews]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -104,20 +113,25 @@ router.get("/:id", async (req, res) => {
  *             $ref: '#/components/schemas/ReviewDTO'
  *     responses:
  *       201:
- *         description: Відгук створено
+ *         description: Review created
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ReviewDTO'
  *       400:
- *         description: Некоректні дані
+ *         description: Invalid request data
+ *       401:
+ *         description: Unauthorized
  */
-router.post("/", async (req, res) => {
+router.post("/", authenticate, async (req, res) => {
   try {
-    const review = await reviewService.createReview(req.body);
+    const review = await reviewService.createReview({
+      ...req.body,
+      reviewer_id: req.user.userId,
+    });
     res.status(201).json(new ReviewDTO(review));
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    respondError(res, e);
   }
 });
 
@@ -125,8 +139,10 @@ router.post("/", async (req, res) => {
  * @swagger
  * /api/reviews/{id}:
  *   patch:
- *     summary: Часткове оновлення відгуку
+ *     summary: Partial update review
  *     tags: [Reviews]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -146,26 +162,26 @@ router.post("/", async (req, res) => {
  *                 type: string
  *     responses:
  *       200:
- *         description: Відгук оновлено
+ *         description: Review updated
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ReviewDTO'
- *       404:
- *         description: Відгук не знайдено
  *       400:
- *         description: Некоректні дані
+ *         description: Invalid data
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Review not found
  */
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", authenticate, async (req, res) => {
   try {
-    const review = await reviewService.updateReview(Number(req.params.id), req.body);
+    const review = await reviewService.updateReview(Number(req.params.id), req.body, req.user);
     res.json(new ReviewDTO(review));
   } catch (e) {
-    if (e.message === "Review not found") {
-      res.status(404).json({ error: e.message });
-    } else {
-      res.status(400).json({ error: e.message });
-    }
+    respondError(res, e);
   }
 });
 
@@ -173,8 +189,10 @@ router.patch("/:id", async (req, res) => {
  * @swagger
  * /api/reviews/{id}:
  *   delete:
- *     summary: Видалити відгук за ID
+ *     summary: Delete review by ID
  *     tags: [Reviews]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -183,7 +201,7 @@ router.patch("/:id", async (req, res) => {
  *           type: integer
  *     responses:
  *       200:
- *         description: Відгук видалено
+ *         description: Review deleted
  *         content:
  *           application/json:
  *             schema:
@@ -192,15 +210,21 @@ router.patch("/:id", async (req, res) => {
  *                 message:
  *                   type: string
  *                   example: Deleted
+ *       400:
+ *         description: Invalid data
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
  *       404:
- *         description: Відгук не знайдено
+ *         description: Review not found
  */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authenticate, async (req, res) => {
   try {
-    await reviewService.deleteReview(Number(req.params.id));
+    await reviewService.deleteReview(Number(req.params.id), req.user);
     res.json({ message: "Deleted" });
-  } catch {
-    res.status(404).json({ error: "Review not found" });
+  } catch (e) {
+    respondError(res, e);
   }
 });
 

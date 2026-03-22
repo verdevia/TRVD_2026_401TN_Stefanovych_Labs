@@ -3,12 +3,19 @@ const router = express.Router();
 
 const { userService } = require("../container");
 const UserDTO = require("../dto/user.dto");
+const authenticate = require("../middleware/auth.middleware");
+const authorizeRoles = require("../middleware/role.middleware");
+
+function respondError(res, e) {
+  const status = e.status || (e.message === "Forbidden" ? 403 : (e.message === "Unauthorized" ? 401 : (/(not found)/i.test(e.message) ? 404 : 400)));
+  return res.status(status).json({ error: e.message });
+}
 
 /**
  * @swagger
  * tags:
  *   name: Users
- *   description: Користувачі системи
+ *   description: System users
  */
 
 /**
@@ -39,11 +46,11 @@ const UserDTO = require("../dto/user.dto");
  * @swagger
  * /api/users:
  *   get:
- *     summary: Отримати всіх користувачів
+ *     summary: Get all users
  *     tags: [Users]
  *     responses:
  *       200:
- *         description: Список користувачів
+ *         description: List of users
  *         content:
  *           application/json:
  *             schema:
@@ -60,7 +67,7 @@ router.get("/", async (req, res) => {
  * @swagger
  * /api/users/{id}:
  *   get:
- *     summary: Отримати користувача за ID
+ *     summary: Get user by ID
  *     tags: [Users]
  *     parameters:
  *       - in: path
@@ -70,13 +77,13 @@ router.get("/", async (req, res) => {
  *           type: integer
  *     responses:
  *       200:
- *         description: Користувач знайдений
+ *         description: User found
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/UserDTO'
  *       404:
- *         description: Користувача не знайдено
+ *         description: User not found
  */
 router.get("/:id", async (req, res) => {
   try {
@@ -91,7 +98,7 @@ router.get("/:id", async (req, res) => {
  * @swagger
  * /api/users:
  *   post:
- *     summary: Створити нового користувача
+ *     summary: Create new user
  *     tags: [Users]
  *     requestBody:
  *       required: true
@@ -111,13 +118,13 @@ router.get("/:id", async (req, res) => {
  *                 example: hashed_password
  *     responses:
  *       201:
- *         description: Користувач створений
+ *         description: User created
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/UserDTO'
  *       400:
- *         description: Некоректні дані
+ *         description: Invalid data
  */
 router.post("/", async (req, res) => {
   try {
@@ -130,10 +137,62 @@ router.post("/", async (req, res) => {
 
 /**
  * @swagger
+ * /api/users/{id}/role:
+ *   patch:
+ *     summary: Update user role (moderator/admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               role:
+ *                 type: string
+ *                 enum: [user, moderator, admin]
+ *                 example: moderator
+ *     responses:
+ *       200:
+ *         description: User role updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UserDTO'
+ *       400:
+ *         description: Invalid role
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: User not found
+ */
+router.patch("/:id/role", authenticate, authorizeRoles("moderator", "admin"), async (req, res) => {
+  try {
+    const user = await userService.updateUserRole(Number(req.params.id), req.body.role, req.user);
+    res.json(new UserDTO(user));
+  } catch (e) {
+    respondError(res, e);
+  }
+});
+
+/**
+ * @swagger
  * /api/users/{id}:
  *   delete:
- *     summary: Видалити користувача за ID
+ *     summary: Delete user by ID
  *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -142,7 +201,7 @@ router.post("/", async (req, res) => {
  *           type: integer
  *     responses:
  *       200:
- *         description: Користувач видалений
+ *         description: User deleted
  *         content:
  *           application/json:
  *             schema:
@@ -151,15 +210,19 @@ router.post("/", async (req, res) => {
  *                 message:
  *                   type: string
  *                   example: Deleted
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
  *       404:
- *         description: Користувача не знайдено
+ *         description: User not found
  */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authenticate, async (req, res) => {
   try {
-    await userService.deleteUser(Number(req.params.id));
+    await userService.deleteUser(Number(req.params.id), req.user);
     res.json({ message: "Deleted" });
-  } catch {
-    res.status(404).json({ error: "User not found" });
+  } catch (e) {
+    respondError(res, e);
   }
 });
 

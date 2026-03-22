@@ -1,42 +1,42 @@
 const prisma = require("./config/prisma");
 
-// Репозиторії
 const UserRepository = require("./repositories/user.repository");
 const AdRepository = require("./repositories/ad.repository");
 const MessageRepository = require("./repositories/message.repository");
 const ReviewRepository = require("./repositories/review.repository");
 const FavoriteRepository = require("./repositories/favorite.repository");
-const CategoryRepository = require("./repositories/category.repository"); // <- додано
+const CategoryRepository = require("./repositories/category.repository");
 
-// Сервіси
+const AuthService = require("./services/auth.service");
 const UserService = require("./services/user.service");
 const AdService = require("./services/ad.service");
 const MessageService = require("./services/message.service");
 const ReviewService = require("./services/review.service");
 const FavoriteService = require("./services/favorite.service");
-const CategoryService = require("./services/category.service"); // <- додано
+const CategoryService = require("./services/category.service");
 
-// Ініціалізація репозиторіїв
 const userRepository = new UserRepository(prisma);
 const adRepository = new AdRepository(prisma);
 const messageRepository = new MessageRepository(prisma);
 const reviewRepository = new ReviewRepository(prisma);
 const favoriteRepository = new FavoriteRepository(prisma);
-const categoryRepository = new CategoryRepository(prisma); // <- додано
+const categoryRepository = new CategoryRepository(prisma);
 
-// Ініціалізація сервісів
+const authService = new AuthService(userRepository);
+
 const userService = new UserService(userRepository);
 const adService = new AdService(adRepository);
 const messageService = new MessageService(messageRepository);
 const reviewService = new ReviewService(reviewRepository);
 const favoriteService = new FavoriteService(favoriteRepository);
-const categoryService = new CategoryService(categoryRepository); // <- додано
+const categoryService = new CategoryService(categoryRepository);
 
 module.exports = {
+  authService,
   userService,
   adService,
   messageService,
   reviewService,
   favoriteService,
-  categoryService, // <- додано
+  categoryService,
 };

@@ -29,6 +29,12 @@ class UserRepository {
       where: { user_id: id }
     });
   }
+
+  findByEmail(email) {
+  return this.prisma.user.findUnique({
+    where: { email },
+  });
+}
 }
 
 module.exports = UserRepository;

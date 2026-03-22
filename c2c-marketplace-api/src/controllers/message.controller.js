@@ -2,12 +2,18 @@ const express = require("express");
 const router = express.Router();
 const { messageService } = require("../container");
 const MessageDTO = require("../dto/message.dto");
+const authenticate = require("../middleware/auth.middleware");
+
+function respondError(res, e) {
+  const status = e.status || (e.message === "Forbidden" ? 403 : (e.message === "Unauthorized" ? 401 : (/(not found)/i.test(e.message) ? 404 : 400)));
+  return res.status(status).json({ error: e.message });
+}
 
 /**
  * @swagger
  * tags:
  *   name: Messages
- *   description: Повідомлення між користувачами
+ *   description: User messages
  */
 
 /**
@@ -31,7 +37,7 @@ const MessageDTO = require("../dto/message.dto");
  *           example: 10
  *         content:
  *           type: string
- *           example: "Привіт, цікавить товар!"
+ *           example: "Hello, I'm interested in the item!"
  *         sent_at:
  *           type: string
  *           format: date-time
@@ -42,20 +48,24 @@ const MessageDTO = require("../dto/message.dto");
  * @swagger
  * /api/messages:
  *   get:
- *     summary: Отримати всі повідомлення
+ *     summary: Get user messages
  *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Список повідомлень
+ *         description: List of messages
  *         content:
  *           application/json:
  *             schema:
  *               type: array
  *               items:
  *                 $ref: '#/components/schemas/MessageDTO'
+ *       401:
+ *         description: Unauthorized
  */
-router.get("/", async (req, res) => {
-  const messages = await messageService.getAllMessages();
+router.get("/", authenticate, async (req, res) => {
+  const messages = await messageService.getUserMessages(req.user.userId);
   res.json(messages.map(m => new MessageDTO(m)));
 });
 
@@ -63,8 +73,10 @@ router.get("/", async (req, res) => {
  * @swagger
  * /api/messages/{id}:
  *   get:
- *     summary: Отримати повідомлення за ID
+ *     summary: Get message by ID
  *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -73,17 +85,19 @@ router.get("/", async (req, res) => {
  *           type: integer
  *     responses:
  *       200:
- *         description: Повідомлення знайдено
+ *         description: Message found
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/MessageDTO'
+ *       401:
+ *         description: Unauthorized
  *       404:
- *         description: Повідомлення не знайдено
+ *         description: Message not found
  */
-router.get("/:id", async (req, res) => {
+router.get("/:id", authenticate, async (req, res) => {
   try {
-    const message = await messageService.getMessage(Number(req.params.id));
+    const message = await messageService.getMessage(Number(req.params.id), req.user.userId);
     res.json(new MessageDTO(message));
   } catch {
     res.status(404).json({ error: "Message not found" });
@@ -94,8 +108,10 @@ router.get("/:id", async (req, res) => {
  * @swagger
  * /api/messages:
  *   post:
- *     summary: Створити нове повідомлення
+ *     summary: Create a new message
  *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -104,20 +120,25 @@ router.get("/:id", async (req, res) => {
  *             $ref: '#/components/schemas/MessageDTO'
  *     responses:
  *       201:
- *         description: Повідомлення створено
+ *         description: Message created
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/MessageDTO'
  *       400:
- *         description: Некоректні дані
+ *         description: Invalid request data
+ *       401:
+ *         description: Unauthorized
  */
-router.post("/", async (req, res) => {
+router.post("/", authenticate, async (req, res) => {
   try {
-    const message = await messageService.createMessage(req.body);
+    const message = await messageService.createMessage({
+      ...req.body,
+      sender_id: req.user.userId,
+    });
     res.status(201).json(new MessageDTO(message));
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    respondError(res, e);
   }
 });
 
@@ -125,8 +146,10 @@ router.post("/", async (req, res) => {
  * @swagger
  * /api/messages/{id}:
  *   patch:
- *     summary: Часткове оновлення повідомлення
+ *     summary: Partial update message
  *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -144,26 +167,26 @@ router.post("/", async (req, res) => {
  *                 type: string
  *     responses:
  *       200:
- *         description: Повідомлення оновлено
+ *         description: Message updated
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/MessageDTO'
- *       404:
- *         description: Повідомлення не знайдено
  *       400:
- *         description: Некоректні дані
+ *         description: Invalid request data
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Message not found
  */
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", authenticate, async (req, res) => {
   try {
-    const message = await messageService.updateMessage(Number(req.params.id), req.body);
+    const message = await messageService.updateMessage(Number(req.params.id), req.body, req.user.userId);
     res.json(new MessageDTO(message));
   } catch (e) {
-    if (e.message === "Message not found") {
-      res.status(404).json({ error: e.message });
-    } else {
-      res.status(400).json({ error: e.message });
-    }
+    respondError(res, e);
   }
 });
 
@@ -171,8 +194,10 @@ router.patch("/:id", async (req, res) => {
  * @swagger
  * /api/messages/{id}:
  *   delete:
- *     summary: Видалити повідомлення за ID
+ *     summary: Delete message by ID
  *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -181,7 +206,7 @@ router.patch("/:id", async (req, res) => {
  *           type: integer
  *     responses:
  *       200:
- *         description: Повідомлення видалено
+ *         description: Message deleted
  *         content:
  *           application/json:
  *             schema:
@@ -190,15 +215,17 @@ router.patch("/:id", async (req, res) => {
  *                 message:
  *                   type: string
  *                   example: Deleted
+ *       403:
+ *         description: Forbidden
  *       404:
- *         description: Повідомлення не знайдено
+ *         description: Message not found
  */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authenticate, async (req, res) => {
   try {
-    await messageService.deleteMessage(Number(req.params.id));
+    await messageService.deleteMessage(Number(req.params.id), req.user.userId);
     res.json({ message: "Deleted" });
-  } catch {
-    res.status(404).json({ error: "Message not found" });
+  } catch (e) {
+    respondError(res, e);
   }
 });
 

@@ -3,23 +3,35 @@ class MessageService {
     this.messageRepository = messageRepository;
   }
 
-  async getAllMessages() {
-    return await this.messageRepository.findAll();
+  async getUserMessages(userId) {
+    return await this.messageRepository.findByUser(userId);
   }
 
-  async getMessage(id) {
-    return await this.messageRepository.findById(id);
+  async getMessage(id, userId) {
+    const message = await this.messageRepository.findById(id);
+    if (!message || (message.sender_id !== userId && message.receiver_id !== userId)) {
+      throw new Error("Message not found");
+    }
+    return message;
   }
 
   async createMessage(data) {
     return await this.messageRepository.create(data);
   }
 
-  async updateMessage(id, data) {
+  async updateMessage(id, data, userId) {
+    const message = await this.messageRepository.findById(id);
+    if (!message || message.sender_id !== userId) {
+      throw new Error("Message not found");
+    }
     return await this.messageRepository.update(id, data);
   }
 
-  async deleteMessage(id) {
+  async deleteMessage(id, userId) {
+    const message = await this.messageRepository.findById(id);
+    if (!message || message.sender_id !== userId) {
+      throw new Error("Message not found");
+    }
     return await this.messageRepository.delete(id);
   }
 }

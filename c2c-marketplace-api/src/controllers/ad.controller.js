@@ -3,12 +3,18 @@ const router = express.Router();
 
 const { adService } = require("../container");
 const AdDTO = require("../dto/ad.dto");
+const authenticate = require("../middleware/auth.middleware");
+
+function respondError(res, e) {
+  const status = e.status || (e.message === "Forbidden" ? 403 : (e.message === "Unauthorized" ? 401 : (/(not found)/i.test(e.message) ? 404 : 400)));
+  return res.status(status).json({ error: e.message });
+}
 
 /**
  * @swagger
  * tags:
  *   name: Ads
- *   description: Оголошення користувачів
+ *   description: User ads
  */
 
 /**
@@ -32,7 +38,7 @@ const AdDTO = require("../dto/ad.dto");
  *           example: "iPhone 14 Pro"
  *         description:
  *           type: string
- *           example: "Продам майже новий iPhone 14 Pro, стан відмінний"
+ *           example: "Selling almost new iPhone 14 Pro, excellent condition"
  *         price:
  *           type: number
  *           example: 1200.50
@@ -48,11 +54,11 @@ const AdDTO = require("../dto/ad.dto");
  * @swagger
  * /api/ads:
  *   get:
- *     summary: Отримати всі оголошення
+ *     summary: Get all ads
  *     tags: [Ads]
  *     responses:
  *       200:
- *         description: Список оголошень
+ *         description: List of ads
  *         content:
  *           application/json:
  *             schema:
@@ -69,7 +75,7 @@ router.get("/", async (req, res) => {
  * @swagger
  * /api/ads/{id}:
  *   get:
- *     summary: Отримати оголошення за ID
+ *     summary: Get ad by ID
  *     tags: [Ads]
  *     parameters:
  *       - in: path
@@ -79,13 +85,13 @@ router.get("/", async (req, res) => {
  *           type: integer
  *     responses:
  *       200:
- *         description: Оголошення знайдено
+ *         description: Ad found
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/AdDTO'
  *       404:
- *         description: Оголошення не знайдено
+ *         description: Ad not found
  */
 router.get("/:id", async (req, res) => {
   try {
@@ -100,8 +106,10 @@ router.get("/:id", async (req, res) => {
  * @swagger
  * /api/ads:
  *   post:
- *     summary: Створити нове оголошення
+ *     summary: Create a new ad
  *     tags: [Ads]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -121,20 +129,29 @@ router.get("/:id", async (req, res) => {
  *                 type: number
  *     responses:
  *       201:
- *         description: Оголошення створено
+ *         description: Ad created
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/AdDTO'
  *       400:
- *         description: Некоректні дані
+ *         description: Invalid request data
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
  */
-router.post("/", async (req, res) => {
+
+router.post("/", authenticate, async (req, res) => {
   try {
-    const ad = await adService.createAd(req.body);
+    const ad = await adService.createAd({
+      ...req.body,
+      user_id: req.user.userId,
+    });
+
     res.status(201).json(new AdDTO(ad));
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    respondError(res, e);
   }
 });
 
@@ -142,7 +159,9 @@ router.post("/", async (req, res) => {
  * @swagger
  * /api/ads/{id}:
  *   delete:
- *     summary: Видалити оголошення за ID
+ *     summary: Delete ad by ID
+ *     security:
+ *       - bearerAuth: []
  *     tags: [Ads]
  *     parameters:
  *       - in: path
@@ -152,7 +171,7 @@ router.post("/", async (req, res) => {
  *           type: integer
  *     responses:
  *       200:
- *         description: Оголошення видалено
+ *         description: Ad deleted
  *         content:
  *           application/json:
  *             schema:
@@ -161,15 +180,23 @@ router.post("/", async (req, res) => {
  *                 message:
  *                   type: string
  *                   example: Deleted
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
  *       404:
- *         description: Оголошення не знайдено
+ *         description: Ad not found
  */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authenticate, async (req, res) => {
   try {
-    await adService.deleteAd(Number(req.params.id));
-    res.json({ message: "Deleted" });
-  } catch {
-    res.status(404).json({ error: "Ad not found" });
+    await adService.deleteAd(
+      Number(req.params.id),
+      req.user
+    );
+
+    res.json({ message: "Ad deleted" });
+  } catch (e) {
+    respondError(res, e);
   }
 });
 
@@ -177,8 +204,10 @@ router.delete("/:id", async (req, res) => {
  * @swagger
  * /api/ads/{id}:
  *   patch:
- *     summary: Часткове оновлення оголошення
+ *     summary: Partial update ad
  *     tags: [Ads]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -205,26 +234,26 @@ router.delete("/:id", async (req, res) => {
  *                 type: integer
  *     responses:
  *       200:
- *         description: Оголошення оновлено
+ *         description: Ad updated
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/AdDTO'
- *       404:
- *         description: Оголошення не знайдено
  *       400:
- *         description: Некоректні дані
+ *         description: Invalid request data
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Ad not found
  */
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", authenticate, async (req, res) => {
   try {
-    const ad = await adService.updateAd(Number(req.params.id), req.body);
+    const ad = await adService.updateAd(Number(req.params.id), req.body, req.user);
     res.json(new AdDTO(ad));
   } catch (e) {
-    if (e.message === "Ad not found") {
-      res.status(404).json({ error: e.message });
-    } else {
-      res.status(400).json({ error: e.message });
-    }
+    respondError(res, e);
   }
 });
 

@@ -1,13 +1,20 @@
 const express = require("express");
 const router = express.Router();
+
 const { favoriteService } = require("../container");
 const FavoriteDTO = require("../dto/favorite.dto");
+const authenticate = require("../middleware/auth.middleware");
+
+function respondError(res, e) {
+  const status = e.status || (e.message === "Forbidden" ? 403 : (e.message === "Unauthorized" ? 401 : (/(not found)/i.test(e.message) ? 404 : 400)));
+  return res.status(status).json({ error: e.message });
+}
 
 /**
  * @swagger
  * tags:
  *   name: Favorites
- *   description: Обрані оголошення користувача
+ *   description: User favorites
  */
 
 /**
@@ -19,76 +26,84 @@ const FavoriteDTO = require("../dto/favorite.dto");
  *       properties:
  *         user_id:
  *           type: integer
- *           example: 2
+ *           example: 1
  *         ad_id:
  *           type: integer
- *           example: 10
+ *           example: 2
  */
 
 /**
  * @swagger
  * /api/favorites:
  *   get:
- *     summary: Отримати всі обрані оголошення
+ *     summary: Get current user favorites
  *     tags: [Favorites]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Список обраного
+ *         description: Favorites list
  *         content:
  *           application/json:
  *             schema:
  *               type: array
  *               items:
  *                 $ref: '#/components/schemas/FavoriteDTO'
+ *       401:
+ *         description: Unauthorized
  */
-router.get("/", async (req, res) => {
-  const favorites = await favoriteService.getAllFavorites();
+router.get("/", authenticate, async (req, res) => {
+  const favorites = await favoriteService.getUserFavorites(req.user.userId);
   res.json(favorites.map(f => new FavoriteDTO(f)));
 });
 
 /**
  * @swagger
- * /api/favorites:
+ * /api/favorites/{ad_id}:
  *   post:
- *     summary: Додати оголошення в обране
+ *     summary: Add favorite
  *     tags: [Favorites]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/FavoriteDTO'
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: ad_id
+ *         required: true
+ *         schema:
+ *           type: integer
  *     responses:
  *       201:
- *         description: Додано в обране
+ *         description: Favorite added
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/FavoriteDTO'
  *       400:
- *         description: Некоректні дані
+ *         description: Invalid request data
+ *       401:
+ *         description: Unauthorized
  */
-router.post("/", async (req, res) => {
+router.post("/:ad_id", authenticate, async (req, res) => {
   try {
-    const fav = await favoriteService.addFavorite(req.body);
-    res.status(201).json(new FavoriteDTO(fav));
+    const favorite = await favoriteService.createFavorite({
+      user_id: req.user.userId,
+      ad_id: Number(req.params.ad_id),
+    });
+    res.status(201).json(new FavoriteDTO(favorite));
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    respondError(res, e);
   }
 });
 
 /**
  * @swagger
- * /api/favorites/{user_id}/{ad_id}:
+ * /api/favorites/{ad_id}:
  *   delete:
- *     summary: Видалити оголошення з обраного
+ *     summary: Remove favorite
  *     tags: [Favorites]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: user_id
- *         required: true
- *         schema:
- *           type: integer
  *       - in: path
  *         name: ad_id
  *         required: true
@@ -96,7 +111,7 @@ router.post("/", async (req, res) => {
  *           type: integer
  *     responses:
  *       200:
- *         description: Видалено з обраного
+ *         description: Favorite removed
  *         content:
  *           application/json:
  *             schema:
@@ -106,14 +121,16 @@ router.post("/", async (req, res) => {
  *                   type: string
  *                   example: Deleted
  *       404:
- *         description: Не знайдено в обраному
+ *         description: Favorite not found
+ *       401:
+ *         description: Unauthorized
  */
-router.delete("/:user_id/:ad_id", async (req, res) => {
+router.delete("/:ad_id", authenticate, async (req, res) => {
   try {
-    await favoriteService.removeFavorite(Number(req.params.user_id), Number(req.params.ad_id));
+    await favoriteService.deleteFavorite(req.user.userId, Number(req.params.ad_id));
     res.json({ message: "Deleted" });
   } catch (e) {
-    res.status(404).json({ error: e.message });
+    respondError(res, e);
   }
 });
 

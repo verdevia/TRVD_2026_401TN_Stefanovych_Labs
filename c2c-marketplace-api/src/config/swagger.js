@@ -5,13 +5,52 @@ const options = {
     openapi: "3.0.0",
     info: {
       title: "C2C Marketplace API",
-      version: "1.0.0"
+      version: "1.0.0",
     },
-    servers: [
-      { url: "http://localhost:3000" }
-    ]
+
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+        },
+      },
+
+      schemas: {
+        SignUpDTO: {
+          type: "object",
+          required: ["username", "email", "password"],
+          properties: {
+            username: { type: "string", example: "ivan123" },
+            email: { type: "string", example: "ivan@gmail.com" },
+            password: { type: "string", example: "password123" },
+          },
+        },
+
+        SignInDTO: {
+          type: "object",
+          required: ["email", "password"],
+          properties: {
+            email: { type: "string", example: "ivan@gmail.com" },
+            password: { type: "string", example: "password123" },
+          },
+        },
+
+        TokenResponse: {
+          type: "object",
+          properties: {
+            token: {
+              type: "string",
+              example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+            },
+          },
+        },
+      },
+    },
   },
-  apis: ["./src/controllers/*.js"]
+
+  apis: ["./src/controllers/*.js"], 
 };
 
 module.exports = swaggerJsdoc(options);

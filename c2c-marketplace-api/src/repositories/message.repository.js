@@ -3,8 +3,15 @@ class MessageRepository {
     this.prisma = prisma;
   }
 
-  findAll() {
-    return this.prisma.message.findMany();
+  findByUser(userId) {
+    return this.prisma.message.findMany({
+      where: {
+        OR: [
+          { sender_id: userId },
+          { receiver_id: userId },
+        ],
+      },
+    });
   }
 
   findById(id) {
